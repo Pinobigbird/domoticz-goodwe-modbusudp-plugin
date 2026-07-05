@@ -51,6 +51,21 @@ cd domoticz/plugins/domoticz-goodwe-modbusudp-plugin
 ```
 * Note: Replace the path `C:\Program Files (x86)\Python310-32\` with the path where you have installed 32-bit Python.
 
+### Important: do not install dependencies into a virtual environment
+Domoticz embeds its own Python interpreter and does not activate virtualenvs. If you `pip install` the
+dependencies into a venv (e.g. `python3 -m venv`), Domoticz will fail to load the plugin with
+`ModuleNotFoundError: No module named 'goodwe'`, even though the package is installed.
+
+Install the dependencies system-wide as shown above (`sudo pip3 install -r requirements.txt`) so they end up
+in the site-packages of the same Python interpreter Domoticz uses. If you must use a separate environment,
+point `PYTHONPATH` in Domoticz's startup script (e.g. `/etc/init.d/domoticz.sh`) directly at that
+environment's `site-packages` folder (not the environment's root folder), for example:
+```shell
+export PYTHONPATH=/home/pi/Domoticz_Python_Environment/lib/python3.13/site-packages:$PYTHONPATH
+```
+and confirm the Python version in that path matches the interpreter Domoticz reports at startup
+(`sudo journalctl -u domoticz --no-pager | grep -i "python version"`).
+
 ## After installation
 Restart your Domoticz, and add the hardware via Setup->Hardware and select Type: "GoodWe ModbusUDP", enter a name and IP address and optionally select the inverter family for a faster connection time. Set the interval to your needs and then press the "Add" button.
 Then all of the inverter sensors should now be visible in "Utility" and "Temperature".

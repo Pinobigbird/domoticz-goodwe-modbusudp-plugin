@@ -258,7 +258,7 @@ class BasePlugin:
         self.connectionFailureMaxCountOnHeartbeat=5
 
     def onStart(self):
-        self.add_devices = bool(Parameters["Mode1"])
+        self.add_devices = Parameters["Mode1"] == "Yes"
         Domoticz.Heartbeat(int(Parameters["Mode2"]))
         if Parameters["Mode5"] == "Debug":
             Domoticz.Debugging(1)
