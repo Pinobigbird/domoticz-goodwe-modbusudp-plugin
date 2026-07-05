@@ -115,13 +115,16 @@ class DSwitchType:
 
 THREEPHASE_SERIES = [ "ET","BT","DT" ] # All models in these series are 3-phase models, so we can skip our 3 phase model detection.
 
+# Devices created for internal use only (e.g. as a PREPEND_IDNUM source for another device), not meant to clutter the dashboard.
+HIDDEN_DEVICE_UNITS = { 119 }
+
 INVERTER_PARAMS = [
 #   MODBUSNAME,     DISPLAY_NAME,         TYPE,           SUBTYPE,                      SWITCHTYPE,                  OPTIONS,              FORMAT,        PREPEND_IDNUM, RST0WAIT FOR3PHASEMODEL, IDNUM
     ["vpv1",        "PV1 Voltage",        DType.General,  DGeneralSubType.Voltage,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           1 ], # PV1 Voltage = 127.1 V
     ["ppv1",        "PV1 Power",          DType.Usage,    DUsageSubType.Electric,       DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           2 ], # PV1 Power = 407 W
     ["ppv",         "PV Power",           DType.Usage,    DUsageSubType.Electric,       DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           4 ], # PV Power = 389 W
     ["work_mode",   "Status code",        DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,         {},                   "{:.2f}",      None,           False,  False,           5 ], # Work Mode Code = 1
-    ["e_total",     "Total Generation",   DType.General,  DGeneralSubType.Electric,     DSwitchType.EnergyGenerated, {},                   "{};{}",       4,              False,  False,           6 ], # Total PV Generation = 7.8 kWh
+    ["e_total",     "Total Generation",   DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,         {"Custom": "1;kWh"},  "{:.2f}",      None,           False,  False,           6 ], # Total PV Generation = 7.8 kWh
     ["ipv1",        "PV1 Current",        DType.General,  DGeneralSubType.Current,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           7 ], # PV1 Current = 3.2 A
     ["vpv2",        "PV2 Voltage",        DType.General,  DGeneralSubType.Voltage,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           8 ], # PV2 Voltage = 127.1 V
     ["ipv2",        "PV2 Current",        DType.General,  DGeneralSubType.Current,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           9 ], # PV2 Current = 3.2 A
@@ -147,7 +150,7 @@ INVERTER_PARAMS = [
     ["temperature", "Temperature",        DType.General,  DGeneralSubType.Temperature,  DSwitchType.General,         {},                   "{:.2f}",      None,           False,  False,           29 ], # Temperature
     ["vbus",        "Bus Voltage",        DType.General,  DGeneralSubType.Voltage,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,           30 ], # Bus Voltage = 377.8 V
     ["vnbus",       "NBus Voltage",       DType.General,  DGeneralSubType.Voltage,      DSwitchType.General,         {},                   "{:.2f}",      None,           True,   True,            31 ], # NBus Voltage = -0.1 V
-    ["e_day",       "Today's Generation", DType.General,  DGeneralSubType.Electric,     DSwitchType.EnergyGenerated, {},                   "{};{}",       4,              False,  False,           32 ], # Today's PV Generation = 0.9 kWh
+    ["e_day",       "Today's Generation", DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,         {"Custom": "1;kWh"},  "{:.2f}",      None,           False,  False,           32 ], # Today's PV Generation = 0.9 kWh
     ["h_total",     "Total hours",        DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,         {"Custom": "1;h"},    "{:.2f}",      None,           False,  False,           33 ], # Hours Total = 29 h
     ["funbit",      "FunBit",             DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,         {},                   "{:.2f}",      None,           False,  False,           34 ], # FunBit=336
     ["timestamp",   "Time",               DType.General,  DGeneralSubType.Text,         DSwitchType.General,         {},                   "{}",          None,           False,  False,           3  ], # Timestamp = 2022-06-06 11:23:49 
@@ -233,7 +236,9 @@ INVERTER_PARAMS = [
     ["meter_apparent_power3","Meter Apparent Power L3",DType.Usage,DUsageSubType.Electric,DSwitchType.General,          {},                   "{:.2f}",      None,           False,  True,          115 ], # Meter Apparent Power L3 = 188 VA
     ["meter_apparent_power_total","Meter Apparent Power Total",DType.Usage,DUsageSubType.Electric,DSwitchType.General,  {},                   "{:.2f}",      None,           False,  False,          116 ], # Meter Apparent Power Total = -867 VA
     ["meter_type","Meter Type",          DType.General,  DGeneralSubType.CustomSensor, DSwitchType.General,          {},                   "{}",          None,           False,  False,          117 ], # Meter Type = 255
-    ["meter_sw_version","Meter Software Version",DType.General,DGeneralSubType.CustomSensor,DSwitchType.General,     {},                   "{}",          None,           False,  False,          118 ]  # Meter Software Version = 2    
+    ["meter_sw_version","Meter Software Version",DType.General,DGeneralSubType.CustomSensor,DSwitchType.General,     {},                   "{}",          None,           False,  False,          118 ], # Meter Software Version = 2
+    ["total_inverter_power","Total Inverter Power (raw)",DType.Usage,DUsageSubType.Electric, DSwitchType.General,         {},                   "{:.2f}",      None,           True,   False,          119 ], # Total Inverter Power = 3096 W. Hidden; used as PREPEND_IDNUM source for unit 120.
+    ["e_total",     "Total Inverter Power",DType.General,  DGeneralSubType.Electric,     DSwitchType.EnergyGenerated, {},                   "{};{}",       119,            False,  False,          120 ]  # Total Inverter Power = 3096 W;7800000 Wh
 ]
 
 # A time counter in milleconds that is guaranteed to go forward.
@@ -442,7 +447,7 @@ class BasePlugin:
                                                     Subtype=unit[Column.SUBTYPE],
                                                     Switchtype=unit[Column.SWITCHTYPE],
                                                     Options=unit[Column.OPTIONS],
-                                                    Used=1,
+                                                    Used=0 if unit[Column.IDNUM] in HIDDEN_DEVICE_UNITS else 1,
                                                 ).Create()
 
                 else:
