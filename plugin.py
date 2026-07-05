@@ -47,7 +47,7 @@
         </param>
         <param field="Mode2" label="Interval" width="100px" required="true" default="5" >
             <options>
-                <option label="1  second"  value="1" />                
+                <option label="1  second"  value="1" />
                 <option label="5  seconds" value="5" default="true" />
                 <option label="10 seconds" value="10" />
                 <option label="20 seconds" value="20" />
@@ -57,6 +57,7 @@
                 <option label="240 seconds" value="240" />
             </options>
         </param>
+        <param field="Mode4" label="Rated Power (W)" width="100px" required="true" default="5000" />
         <param field="Mode5" label="Log filter" width="100px">
             <options>
                 <option label="Normal" value="Normal" default="true" />
@@ -117,6 +118,20 @@ THREEPHASE_SERIES = [ "ET","BT","DT" ] # All models in these series are 3-phase 
 
 # Devices created for internal use only (e.g. as a PREPEND_IDNUM source for another device), not meant to clutter the dashboard.
 HIDDEN_DEVICE_UNITS = { 119 }
+
+# Writable control devices for inverter settings. These are not part of INVERTER_PARAMS since they
+# represent settings (read/written via read_setting()/write_setting()), not runtime sensor data.
+POWER_LIMIT_ENABLED_UNIT = 121  # On/Off switch, maps to the 'grid_export' setting.
+POWER_LIMIT_VALUE_UNIT = 122    # Selector switch, maps to the 'grid_export_limit' setting (percentage of rated power).
+
+# The GoodWe inverter can temporarily exceed its rated power, so the Power Limit Value selector goes up to 150%.
+POWER_LIMIT_LEVELS = list(range(0, 151, 10))
+POWER_LIMIT_LEVEL_NAMES = "|".join(f"{p}%" for p in POWER_LIMIT_LEVELS)
+POWER_LIMIT_LEVEL_ACTIONS = "|".join([""] * len(POWER_LIMIT_LEVELS))
+
+# Settings (as opposed to runtime sensor data) change rarely and each one costs its own Modbus
+# round-trip to read, so they are only re-synced from the inverter this often (in milliseconds).
+SETTINGS_SYNC_INTERVAL = 60000
 
 INVERTER_PARAMS = [
 #   MODBUSNAME,     DISPLAY_NAME,         TYPE,           SUBTYPE,                      SWITCHTYPE,                  OPTIONS,              FORMAT,        PREPEND_IDNUM, RST0WAIT FOR3PHASEMODEL, IDNUM
@@ -242,8 +257,18 @@ INVERTER_PARAMS = [
 ]
 
 # A time counter in milleconds that is guaranteed to go forward.
-def millis(): 
+def millis():
     return int(time.monotonic() * 1000)
+
+def wattsForPercentage(percentage):
+    try:
+        rated_power = float(Parameters["Mode4"])
+    except (ValueError, KeyError):
+        rated_power = 0.0
+    return percentage / 100.0 * rated_power
+
+def powerLimitValueDeviceName(percentage):
+    return f"Power Limit Value ({wattsForPercentage(percentage):.0f} W)"
 
 class BasePlugin:
 
@@ -261,6 +286,10 @@ class BasePlugin:
         self.retrydelay=30000 # 30 seconds.
         self.connectionFailureCountOnHeartbeat=0
         self.connectionFailureMaxCountOnHeartbeat=5
+
+        # Settings (Power Limit / Power Limit Value) are re-read from the inverter at this pace,
+        # independently of the heartbeat interval, since each read is its own Modbus round-trip.
+        self.lastSettingsSyncTime=None
 
     def onStart(self):
         self.add_devices = Parameters["Mode1"] == "Yes"
@@ -377,9 +406,67 @@ class BasePlugin:
                 else:
                     Domoticz.Log("Inverter returned no information")
 
+                self.syncSettings()
+
         # Try to contact the inverter
         else:
             self.readFromInverter()
+
+    # Re-read the Power Limit / Power Limit Value settings from the inverter and update their
+    # Domoticz devices if they were changed by another application (e.g. the manufacturer's app).
+    # Settings are not part of read_runtime_data(), and each one costs its own Modbus round-trip,
+    # so this is throttled independently of the heartbeat interval via SETTINGS_SYNC_INTERVAL.
+    def syncSettings(self):
+        if self.lastSettingsSyncTime is not None and millis() - self.lastSettingsSyncTime < SETTINGS_SYNC_INTERVAL:
+            return
+        self.lastSettingsSyncTime = millis()
+
+        if POWER_LIMIT_ENABLED_UNIT not in Devices and POWER_LIMIT_VALUE_UNIT not in Devices:
+            return
+
+        try:
+            grid_export = asyncio.run(self.inverter.read_setting("grid_export"))
+            grid_export_limit = asyncio.run(self.inverter.read_setting("grid_export_limit"))
+        except (ConnectionException, goodwe.exceptions.RequestFailedException) as e:
+            Domoticz.Log(f"Could not sync Power Limit settings from inverter: {e}")
+            return
+
+        if POWER_LIMIT_ENABLED_UNIT in Devices and grid_export is not None:
+            nValue = 1 if grid_export else 0
+            sValue = "On" if grid_export else "Off"
+            if Devices[POWER_LIMIT_ENABLED_UNIT].nValue != nValue:
+                Devices[POWER_LIMIT_ENABLED_UNIT].Update(nValue=nValue, sValue=sValue)
+
+        if POWER_LIMIT_VALUE_UNIT in Devices and grid_export_limit is not None:
+            percentage = int(grid_export_limit)
+            if Devices[POWER_LIMIT_VALUE_UNIT].sValue != str(percentage):
+                Devices[POWER_LIMIT_VALUE_UNIT].Update(
+                    nValue=percentage, sValue=str(percentage), Name=powerLimitValueDeviceName(percentage)
+                )
+
+    def onCommand(self, Unit, Command, Level, Color):
+        Domoticz.Debug(f"onCommand called for Unit {Unit}: Command '{Command}', Level: {Level}")
+        if self.inverter is None:
+            Domoticz.Error("Cannot process command, inverter is not connected.")
+            return
+
+        try:
+            if Unit == POWER_LIMIT_ENABLED_UNIT:
+                enabled = Command == "On"
+                asyncio.run(self.inverter.write_setting("grid_export", 1 if enabled else 0))
+                Devices[Unit].Update(nValue=1 if enabled else 0, sValue="On" if enabled else "Off")
+            elif Unit == POWER_LIMIT_VALUE_UNIT:
+                percentage = int(Level)
+                asyncio.run(self.inverter.write_setting("grid_export_limit", percentage))
+                Devices[Unit].Update(nValue=percentage, sValue=str(percentage), Name=powerLimitValueDeviceName(percentage))
+            else:
+                return
+        except (ConnectionException, goodwe.exceptions.RequestFailedException) as e:
+            Domoticz.Error(f"Failed to write setting to inverter: {e}")
+            return
+
+        # Avoid syncSettings() immediately re-reading the setting before the inverter has applied it.
+        self.lastSettingsSyncTime = millis()
 
 
     
@@ -457,6 +544,28 @@ class BasePlugin:
                                                     Used=0 if unit[Column.IDNUM] in HIDDEN_DEVICE_UNITS else 1,
                                                 ).Create()
 
+                            # Writable settings controls, not tied to a runtime_data sensor.
+                            if POWER_LIMIT_ENABLED_UNIT not in Devices:
+                                Domoticz.Device(
+                                    Unit=POWER_LIMIT_ENABLED_UNIT,
+                                    Name="Power Limit",
+                                    TypeName="Switch",
+                                    Used=1,
+                                ).Create()
+                            if POWER_LIMIT_VALUE_UNIT not in Devices:
+                                Domoticz.Device(
+                                    Unit=POWER_LIMIT_VALUE_UNIT,
+                                    Name=powerLimitValueDeviceName(0),
+                                    TypeName="Selector Switch",
+                                    Options={
+                                        "LevelActions": POWER_LIMIT_LEVEL_ACTIONS,
+                                        "LevelNames": POWER_LIMIT_LEVEL_NAMES,
+                                        "LevelOffHidden": "true",
+                                        "SelectorStyle": "0",
+                                    },
+                                    Used=1,
+                                ).Create()
+
                 else:
                     Domoticz.Log("Connection established with: {}:{}. Inverter returned no information".format(Parameters["Address"], Parameters["Port"]))
                     Domoticz.Log("Retrying to communicate with inverter after: {}".format(millis() - self.lastconnectfailuretime + self.retrydelay))
@@ -475,6 +584,10 @@ def onStart():
 def onHeartbeat():
     global _plugin
     _plugin.onHeartbeat()
+
+def onCommand(Unit, Command, Level, Color):
+    global _plugin
+    _plugin.onCommand(Unit, Command, Level, Color)
 
 
 
