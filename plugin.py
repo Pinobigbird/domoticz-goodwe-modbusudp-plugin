@@ -333,9 +333,16 @@ class BasePlugin:
                     for unit in INVERTER_PARAMS: # Iterate through our lookup table INVERTER_PARAMS
                         if unit[Column.IDNUM] in Devices: # Find the device in the Domoticz devices list
                             for sensor in self.inverter.sensors(): # Iterate and find the modbusname in the inverter.sensors
-                                if sensor.id_==unit[Column.MODBUSNAME]:                        
+                                if sensor.id_==unit[Column.MODBUSNAME]:
                                     # Now we read the value and debuglog it.
                                     value = runtime_data[unit[Column.MODBUSNAME]]
+                                    if value is None:
+                                        # The goodwe library returns None when it fails to parse this particular
+                                        # register from the inverter's response (e.g. a corrupted/incomplete reply
+                                        # over its notoriously unstable Wifi link). Skip this device for this
+                                        # heartbeat rather than crashing on it; it will pick up the next good reading.
+                                        Domoticz.Debug(f"Sensor '{sensor.id_}' returned no value this cycle, skipping.")
+                                        continue
                                     Domoticz.Debug(f"Processing '{sensor.id_}': Value {sensor.name} = {format(value)} {sensor.unit}.")
                                     
                                     if unit[Column.SWITCHTYPE]==DSwitchType.EnergyGenerated: # The value has been returned by the GoodWe library in kWh, but needs to be Wh for Domoticz
