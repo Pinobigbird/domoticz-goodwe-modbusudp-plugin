@@ -523,26 +523,28 @@ class BasePlugin:
                         # Add devices if enabled and if needed.
                         if self.add_devices:
                             for sensor in self.inverter.sensors():
-                                if sensor.id_ in runtime_data:                        
-                                    if sensor.id_ not in Devices:
-                                        for unit in INVERTER_PARAMS:
-                                            if unit[Column.MODBUSNAME]==sensor.id_:
-                                                value = runtime_data[unit[Column.MODBUSNAME]]
+                                if sensor.id_ in runtime_data:
+                                    for unit in INVERTER_PARAMS:
+                                        if unit[Column.MODBUSNAME]==sensor.id_:
+                                            if unit[Column.IDNUM] in Devices:
+                                                continue
 
-                                                # If the value is for the 3 phase model only and the inverter is single phase, then do not add the value to Domoticz as that would be useless and take up space that is just waste.
-                                                if self.inverterIs3PhaseModel==False and unit[Column.FOR3PHASEMODEL]==True:
-                                                    Domoticz.Debug(f"Single phase model detected. Not creating Domoticz device for {sensor.name} value {format(value)} {sensor.unit}.")
-                                                    continue
+                                            value = runtime_data[unit[Column.MODBUSNAME]]
 
-                                                Domoticz.Device(
-                                                    Unit=unit[Column.IDNUM],
-                                                    Name=unit[Column.DISPLAYNAME],
-                                                    Type=unit[Column.TYPE],
-                                                    Subtype=unit[Column.SUBTYPE],
-                                                    Switchtype=unit[Column.SWITCHTYPE],
-                                                    Options=unit[Column.OPTIONS],
-                                                    Used=0 if unit[Column.IDNUM] in HIDDEN_DEVICE_UNITS else 1,
-                                                ).Create()
+                                            # If the value is for the 3 phase model only and the inverter is single phase, then do not add the value to Domoticz as that would be useless and take up space that is just waste.
+                                            if self.inverterIs3PhaseModel==False and unit[Column.FOR3PHASEMODEL]==True:
+                                                Domoticz.Debug(f"Single phase model detected. Not creating Domoticz device for {sensor.name} value {format(value)} {sensor.unit}.")
+                                                continue
+
+                                            Domoticz.Device(
+                                                Unit=unit[Column.IDNUM],
+                                                Name=unit[Column.DISPLAYNAME],
+                                                Type=unit[Column.TYPE],
+                                                Subtype=unit[Column.SUBTYPE],
+                                                Switchtype=unit[Column.SWITCHTYPE],
+                                                Options=unit[Column.OPTIONS],
+                                                Used=0 if unit[Column.IDNUM] in HIDDEN_DEVICE_UNITS else 1,
+                                            ).Create()
 
                             # Writable settings controls, not tied to a runtime_data sensor.
                             if POWER_LIMIT_ENABLED_UNIT not in Devices:
